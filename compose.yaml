@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5434:5432"               # 5434 avoids clashing with your other labs
+    volumes:
+      - gatedata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:latest
+
+  api:
+    build: ./api
+    env_file: ${API_ENV_FILE:-.env}
+    environment:
+      PRESIDIO_ANALYZER_URL: http://presidio-analyzer:3000
+      PRESIDIO_ANONYMIZER_URL: http://presidio-anonymizer:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets the container reach Ollama on the host
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app                            # live code during development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+      presidio-analyzer:
+        condition: service_started
+      presidio-anonymizer:
+        condition: service_started
+
+volumes:
+  gatedata:
